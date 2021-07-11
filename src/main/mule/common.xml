@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:sqs="http://www.mulesoft.org/schema/mule/sqs" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/sqs http://www.mulesoft.org/schema/mule/sqs/current/mule-sqs.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+	<sub-flow name="initial-attributes" doc:id="ab24eeea-e3d7-45ac-88e8-caf5c733ec24" >
+		<set-variable value="#[attributes.headers.client_id]" doc:name="clientId" doc:id="d3ddc0ab-7b83-4ef1-8356-80dc5ac0bff2" variableName="clientId"/>
+		<set-variable value="#[attributes.headers.correlationId]" doc:name="uniqueId" doc:id="379b9754-6221-4869-9147-02d865e45ae0" variableName="uniqueId"/>
+		<set-variable value="#[attributes.headers.appName]" doc:name="applicationName" doc:id="3b6cf1ea-6e07-495e-9411-e2d9150b6d10" variableName="applicationName"/>
+	</sub-flow>
+	<sub-flow name="commonLoggFlow" doc:id="0cb79102-ddbd-4f68-bd6d-653779b8ee6c" >
+		<logger level="INFO" doc:name="Common_Logger_All_Events" doc:id="14a9503e-a20f-4e7f-8b4f-289830b6e648" message='#[%dw 2.0
+output application/json
+---
+{
+	"Request processing for client" : vars.clientId default "",
+	"Unique message Id" : vars.uniqueId default "",
+	"From application" : vars.applicationName default "",
+	"Payload is " : payload default ""
+}]'/>
+	</sub-flow>
+	<flow name="commonFlow" doc:id="5af7a891-657f-4de7-8fff-469905a44808" >
+		<scheduler doc:name="Scheduler_Every_2Mins" doc:id="8100bea6-75fa-4fd2-971d-c2d7dd7fc312" >
+			<scheduling-strategy >
+				<fixed-frequency frequency="2" timeUnit="MINUTES"/>
+			</scheduling-strategy>
+		</scheduler>
+		<jms:consume doc:name="Consume_From_Queue" doc:id="ae287f1c-5dda-4d71-be56-5367b71e45d6" config-ref="JMS_Config" destination="${queue.name}" ackMode="IMMEDIATE">
+			<jms:consumer-type >
+				<jms:queue-consumer />
+			</jms:consumer-type>
+		</jms:consume>
+		<ee:transform doc:name="Transform to JSON" doc:id="1f18981b-2194-43bc-97e0-69d352884b77" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<until-successful maxRetries="5" doc:name="Until Successful" doc:id="539ac995-c275-4ed0-a08b-65ee590b80f4" >
+			<db:insert doc:name="Insert_failed_records" doc:id="50b12301-8023-4c88-9f19-926d067b03ad" config-ref="Database_Config" >
+				<db:sql ><![CDATA[${db.createcustomer.query}]]></db:sql>
+				<db:input-parameters ><![CDATA[#[{
+	name : payload.name,
+	email : payload.email,
+	address : payload.address,
+	telephone : payload.telephone
+}]]]></db:input-parameters>
+			</db:insert>
+			<logger level="INFO" doc:name="Logger" doc:id="de12a661-dec7-4ee2-a828-d66b42e32142" message="Failed record inserted success"/>
+		</until-successful>
+	</flow>
+</mule>

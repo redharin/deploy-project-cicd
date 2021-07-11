@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:jms="http://www.mulesoft.org/schema/mule/jms" xmlns:sqs="http://www.mulesoft.org/schema/mule/sqs" xmlns:api-gateway="http://www.mulesoft.org/schema/mule/api-gateway" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:secure-properties="http://www.mulesoft.org/schema/mule/secure-properties" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd 
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/secure-properties http://www.mulesoft.org/schema/mule/secure-properties/current/mule-secure-properties.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/api-gateway http://www.mulesoft.org/schema/mule/api-gateway/current/mule-api-gateway.xsd
+http://www.mulesoft.org/schema/mule/sqs http://www.mulesoft.org/schema/mule/sqs/current/mule-sqs.xsd
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd">
+    <http:listener-config name="curd-customer-httpListenerConfig">
+        <http:listener-connection host="${http.host}" port="${http.port}" />
+    </http:listener-config>
+    <apikit:config name="curd-customer-config" api="resource::d39d2794-0f2a-48ee-9f87-e53492958294:curd-customer:1.0.2:raml:zip:curd-customer.raml" outboundHeadersMapName="outboundHeaders" httpStatusVarName="httpStatus" />
+    <db:config name="Database_Config" doc:name="Database Config" doc:id="b21fb797-cbd1-4e3d-8640-620967e783ab" >
+		<db:my-sql-connection host="${db.host}" port="${db.port}" user="${secure::db.username}" password="${secure::db.password}" database="${db.database}" />
+	</db:config>
+	<configuration-properties doc:name="Configuration properties" doc:id="1240e123-3275-46e1-8e72-f3af93b58740" file="${env}.properties" />
+	<secure-properties:config name="Secure_Properties_Config" doc:name="Secure Properties Config" doc:id="cde9013c-685c-48bf-9a0d-58df6af83662" file="${env}.secure.properties" key="${key}" >
+		<secure-properties:encrypt algorithm="Blowfish" />
+	</secure-properties:config>
+	<api-gateway:autodiscovery apiId="${autodiscovery.id}" ignoreBasePath="true" doc:name="API Autodiscovery" doc:id="47888fad-7eca-4ac9-a984-70891e4a06ea" flowRef="curd-customer-main" />
+	<configuration doc:name="Configuration" doc:id="9d4acdb3-71b4-4196-9668-ddb8f2062dec" defaultErrorHandler-ref="global-error-handlerError_Handler" />
+	<jms:config name="JMS_Config" doc:name="JMS Config" doc:id="91e82090-ce74-4a76-843c-b6924b1e28e4" >
+		<jms:active-mq-connection username="${jms.user}" password="${jms.password}" >
+			<jms:factory-configuration brokerUrl="${jms.url}" />
+		</jms:active-mq-connection>
+	</jms:config>
+	<flow name="curd-customer-main">
+        <http:listener config-ref="curd-customer-httpListenerConfig" path="/api/*">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <flow-ref doc:name="Initialize the variables" doc:id="ad4ede56-3962-45cf-83f6-8091d6b6b448" name="initial-attributes"/>
+		<flow-ref doc:name="Flow Reference" doc:id="00ea5f5e-78e1-411d-9dec-0d875e4c694f" name="commonLoggFlow"/>
+		<apikit:router config-ref="curd-customer-config" />
+    </flow>
+    <flow name="delete:\removecustomer:curd-customer-config">
+		<set-variable value="#[attributes.queryParams.customerId]" doc:name="Set Variable" doc:id="d4d0e14d-fbd6-4949-bcb9-45e22a3d0d14" variableName="cusId"/>
+		<db:delete doc:name="Delete" doc:id="a20932eb-bb86-4b64-9c91-4bce2eae15cf" config-ref="Database_Config">
+			<db:sql ><![CDATA[delete from customer_tbl where id=:id]]></db:sql>
+			<db:input-parameters ><![CDATA[#[{
+	id : vars.cusId
+}]]]></db:input-parameters>
+		</db:delete>
+		<ee:transform doc:name="Transform Message" doc:id="12cd20de-e760-42e2-9260-d22749bc9948">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"Message" : "Customer remove success"
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<flow-ref doc:name="Flow Reference" doc:id="bbb204a6-8699-4713-bdfd-cbd6506ce77a" name="commonLoggFlow"/>
+    </flow>
+    <flow name="patch:\updatecustomertel:application\json:curd-customer-config">
+        <db:update doc:name="Update" doc:id="863e86fc-175a-4235-a272-f54cee1dd40d" config-ref="Database_Config">
+			<db:sql ><![CDATA[${db.updatetelno.query}]]></db:sql>
+			<db:input-parameters ><![CDATA[#[{
+	telephone : payload.telephone,
+	id : payload.id
+}]]]></db:input-parameters>
+		</db:update>
+		<ee:transform xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  Message: "Telephone number updated"
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+		<flow-ref doc:name="Flow Reference" doc:id="e2df0739-e4db-45ea-a0ee-34e7ce50c14c" name="commonLoggFlow"/>
+    </flow>
+    <flow name="get:\getallcustomers:curd-customer-config">
+        <db:select doc:id="009ca2fb-9ccd-464f-8a0d-7fb1a521ab26" config-ref="Database_Config">
+			<db:sql ><![CDATA[${db.selectallcus.query}]]></db:sql>
+		</db:select>
+		<ee:transform doc:name="Transform Message" doc:id="0537f4b7-d125-43aa-a66d-5180d150e2fb">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<flow-ref doc:name="Flow Reference" doc:id="989ad941-65f8-4968-874e-2e097e2a12c6" name="commonLoggFlow"/>
+    </flow>
+    <flow name="get:\getcustomerbyId:curd-customer-config">
+        <set-variable value="#[attributes.queryParams.customerId]" doc:name="Set Variable" doc:id="676c07d6-2b5e-4e48-a753-4986aaf808e4" variableName="cusId"/>
+		<db:select doc:name="Select" doc:id="750fcf17-7042-4af1-a129-0e6a1ed235f5" config-ref="Database_Config">
+			<db:sql ><![CDATA[${db.selectcusbyid.query}]]></db:sql>
+			<db:input-parameters ><![CDATA[#[{
+	id : vars.cusId
+}]]]></db:input-parameters>
+		</db:select>
+		<ee:transform doc:name="Transform Message" doc:id="cb32adc0-7e6f-4ccc-9303-902f670718d2">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<flow-ref doc:name="Flow Reference" doc:id="198fe975-a090-4e0e-8675-acaa2611dd36" name="commonLoggFlow"/>
+    </flow>
+    <flow name="post:\createcustomer:application\json:curd-customer-config">
+		<db:insert doc:name="Insert" doc:id="7c9805be-7ddf-4e6a-a49a-7b7ee262280f" config-ref="Database_Config">
+			<db:sql ><![CDATA[${db.createcustomer.query}]]></db:sql>
+			<db:input-parameters ><![CDATA[#[{
+	name : payload.name,
+	email : payload.email,
+	address : payload.address,
+	telephone : payload.telephone
+}]]]></db:input-parameters>
+		</db:insert>
+		<ee:transform doc:name="Final Message to Consumer" doc:id="1dfe306b-07b5-4a70-aa70-d471da623622">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+ "Message" : "Customer created successfully"
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<flow-ref doc:name="Log end event" doc:id="bbf5d9d3-e16a-4fc4-96f8-bab730daf72f" name="commonLoggFlow"/>
+		<error-handler >
+			<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="d224b8fc-28a3-4629-a47d-733bc6468873" >
+				<ee:transform doc:name="JSON Transformation" doc:id="38c05e59-839b-4cee-ab6a-14acfc92bcfe" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<jms:publish doc:name="Publish_Failed_Records_Queue" doc:id="2bce42a1-3c82-4c78-aa2a-bca218f3d9e3" config-ref="JMS_Config" destination="${queue.name}"/>
+				<ee:transform doc:name="Success message after publish" doc:id="b8b7c6da-01f6-48b7-a06e-aa004edf6dce" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+ "Message" : "Customer created successfully"
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</on-error-continue>
+		</error-handler>
+    </flow>
+</mule>
